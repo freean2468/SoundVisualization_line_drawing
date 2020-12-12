@@ -1,10 +1,9 @@
 # SoundVisualization_line_drawing
 
-![SoundVisualization_line_drawing_preview](https://i.imgur.com/.jpg)
+![SoundVisualization_line_drawing_preview](https://i.imgur.com/qpmiQS6.jpg)
 
 ### 개발 환경
-* Visual Studio Code
-* on Mac OS
+* Visual Studio Code on Mac OS
 * threeJS
 
 ### build 방법
