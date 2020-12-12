@@ -1,12 +1,14 @@
 # SoundVisualization_line_drawing
 
+![SoundVisualization_line_drawing_preview](https://i.imgur.com/.jpg)
+
 ### 개발 환경
 * Visual Studio Code
 * on Mac OS
 * threeJS
 
 ### build 방법
-#### npm
+#### - npm
 * npm install --save three
 
 ### 실행
