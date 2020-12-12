@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Sound Visualization by Neil Son with threeJS</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			a {
+				color: #08f;
+			}
+		</style>
+	</head>
+	<body>
+		<!-- overlay안에 플레이 버튼 생성, 뮤직 재생 용 -->
+		<div id="overlay">
+			<div>
+				<button id="startButton">Click to Play</button>
+				<p>Audio playback requires user interaction.</p>
+			</div>
+		</div>
+
+		<div id="container"></div>
+
+		<script type="module">
+			// loading modules
+			import * as THREE from '../build/three.module.js';
+
+			import Stats from './jsm/libs/stats.module.js';
+			import { GUI } from './jsm/libs/dat.gui.module.js';
+			
+			import { CinematicCamera } from './jsm/cameras/CinematicCamera.js';
+			import { OrbitControls } from './jsm/controls/OrbitControls.js';
+
+			// grouping objects
+			var group;
+
+			// points div:container and contains other containers(renderer, stats)
+			var container, stats;
+
+
+			var particlesData = [];
+			var camera, scene, renderer;
+
+			let matLine, line;
+
+			// naive group of each particle objects (means, no additional data except positions)
+			var particles;
+
+			// a container of particles and its materials
+			var pointCloud;
+
+			// determines vector(x,y,z) positions of particles
+			var particlePositions;
+
+			// a container of geometries and its materials
+			var linesMesh;
+
+			// determines positions and colors of the segments of lines
+			var positions, colors;
+
+			// default
+			var maxParticleCount = 512;
+			var particleCount = 512;
+			var r = 10;
+			let theta = 0;
+			var rHalf = r / 2;
+			const PI = 3.141592;
+
+			// gui
+			var effectController = {
+				showDots: false,
+				showLines: true,
+				minDistance: 3,
+				limitConnections: true,
+				maxConnections: 145,
+				particleCount: particleCount,
+				lineAlphaRatio: 1,
+				RGBModifierThreshold : 10,
+				avgFreqThreshold : 72,
+				particleAccelator : 1.7
+			};
+
+			// for audio
+			var analyser, uniforms;
+			var fftSize = 2048;
+
+			// for initiating of right top gui
+			function initGUI() {
+
+				var gui = new GUI();
+
+				gui.add( effectController, "showDots" ).onChange( function ( value ) {
+
+					pointCloud.visible = value;
+
+				} );
+				gui.add( effectController, "showLines" ).onChange( function ( value ) {
+
+					linesMesh.visible = value;
+
+				} );
+				gui.add( effectController, "minDistance", 1, 10 );
+				gui.add( effectController, "limitConnections" );
+				gui.add( effectController, "maxConnections", 0, particleCount, 1 );
+				gui.add( effectController, "particleCount", 0, maxParticleCount, 1 ).onChange( function ( value ) {
+
+					particleCount = parseInt( value );
+					particles.setDrawRange( 0, particleCount );
+
+				} );
+				gui.add( effectController, "lineAlphaRatio", -1.0, 1.0 );
+				gui.add( effectController, "RGBModifierThreshold", -255.0, 255.0 );
+				gui.add( effectController, "avgFreqThreshold", -255.0, 255.0 );
+
+				gui.add( effectController, "particleAccelator", 0.0, 4.0 );
+			}
+
+			// force to interact with the page
+			var startButton = document.getElementById( 'startButton' );
+			startButton.addEventListener( 'click', init );
+
+
+			function init() {
+
+				// remove interaction page
+				var overlay = document.getElementById( 'overlay' );
+				overlay.remove();
+
+				initGUI();
+
+				// points the container of the page
+				container = document.getElementById( 'container' );
+
+				camera = new CinematicCamera( 45, window.innerWidth / window.innerHeight, 1, 4000 );
+				camera.setLens( 15 );
+				camera.position.z = 20;
+
+				// orbit controller (using mouse)
+				var controls = new OrbitControls( camera, container );
+
+				scene = new THREE.Scene();
+
+				group = new THREE.Group();
+				scene.add( group );
+
+				// var helper = new THREE.BoxHelper( new THREE.Mesh( new THREE.BoxBufferGeometry( r, r, r ) ) );
+				// helper.material.color.setHex( 0x101010 );
+				// helper.material.blending = THREE.AdditiveBlending;
+				// helper.material.transparent = true;
+				// group.add( helper );
+
+				// = Greatest number of line segments
+				var segments = maxParticleCount * maxParticleCount;
+
+				// vector arrays for the segements of the lines
+				positions = new Float32Array( segments * 3 );
+				colors = new Float32Array( segments * 3 );
+
+
+				// for the point
+				var pMaterial = new THREE.PointsMaterial( {
+					color: 0xFFFFFF,
+					size: 3,
+					blending: THREE.AdditiveBlending,
+					transparent: true,
+					sizeAttenuation: false
+				} );
+
+				particles = new THREE.BufferGeometry();
+				particlePositions = new Float32Array( maxParticleCount * 3 );
+
+				// init the positions of the particles
+				for ( var i = 0; i < maxParticleCount; i ++ ) {
+
+					var x = Math.random() * r - r / 2;
+					var y = Math.random() * r - r / 2;
+					var z = Math.random() * r - r / 2;
+
+					particlePositions[ i * 3 ] = x;
+					particlePositions[ i * 3 + 1 ] = y;
+					particlePositions[ i * 3 + 2 ] = z;
+
+					// add it to the geometry
+					var maxV = -0.005;
+					var xR = 1 * maxV;
+					var yR = 1 * maxV;
+					var zR = 1 * maxV;
+
+					particlesData.push( {
+						velocity: new THREE.Vector3( maxV + Math.random() * xR, maxV + Math.random() * yR, maxV + Math.random() * zR),
+						numConnections: 0
+					} );
+
+				}
+
+				// draw all of particles
+				//particles.setDrawRange( 0, particleCount );
+				// setPosition
+				particles.setAttribute( 'position', new THREE.BufferAttribute( particlePositions, 3 ).setUsage( THREE.DynamicDrawUsage ) );
+
+				// create the particle 'system'
+				pointCloud = new THREE.Points( particles, pMaterial );
+
+				pointCloud.visible = false;
+
+				group.add( pointCloud );
+
+
+
+
+/*
+				// for the bold lines
+				const geometry2 = new LineGeometry();
+				geometry2.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ).setUsage( THREE.DynamicDrawUsage ) );
+				geometry2.setAttribute( 'color', new THREE.BufferAttribute( colors, 3 ).setUsage( THREE.DynamicDrawUsage ) );
+
+				// geometrical updating required
+				geometry2.computeBoundingSphere();
+
+				geometry2.setDrawRange( 0, 0 );
+
+				matLine = new LineMaterial( {
+					color: 0xffffff,
+					linewidth: 5,
+					vertexColors: true,
+					dashed:false
+				});
+
+				line = new Line2(geometry2, matLine);
+				// line.computeLineDistances();
+				line.scale.set(1,1,1);
+				group.add(line);
+*/
+
+
+
+
+
+				// for the lines
+				var geometry = new THREE.BufferGeometry();
+
+				geometry.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ).setUsage( THREE.DynamicDrawUsage ) );
+				geometry.setAttribute( 'color', new THREE.BufferAttribute( colors, 3 ).setUsage( THREE.DynamicDrawUsage ) );
+
+				// geometrical updating required
+				geometry.computeBoundingSphere();
+
+				geometry.setDrawRange( 0, 0 );
+
+				var material = new THREE.LineBasicMaterial( {
+					vertexColors: THREE.VertexColors,
+					blending: THREE.AdditiveBlending,
+					transparent: true,
+					linewidth:10
+				} );
+
+				linesMesh = new THREE.LineSegments( geometry, material );
+				group.add( linesMesh );
+
+				//
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.outputEncoding = THREE.sRGBEncoding;
+
+				container.appendChild( renderer.domElement );
+
+				//
+
+				stats = new Stats();
+				container.appendChild( stats.dom );
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+
+				//
+
+				var listener = new THREE.AudioListener();
+
+				var audio = new THREE.Audio( listener );
+
+				var mediaElement = new Audio( './sounds/Syn Cole - Time [NCS Release].mp3' );
+				mediaElement.loop = true;
+				mediaElement.play();
+				
+				audio.setMediaElementSource( mediaElement );
+
+				analyser = new THREE.AudioAnalyser( audio, fftSize );
+
+				uniforms = {
+
+					tAudioData: { value: new THREE.DataTexture( analyser.data, fftSize / 2, 1, THREE.LuminanceFormat ) }
+
+				};
+
+				animate();
+			}
+
+			// need in the situations of pulling in or out of the window of the webbrower
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function animate() {
+
+				// init
+				var vertexpos = 0;
+				var colorpos = 0;
+				var numConnected = 0;
+
+				let fftSegments = fftSize/effectController.particleCount;
+				let particleSegmentsThreshold = effectController.particleCount/fftSegments;
+				let iParticleSegment = 0;
+
+				let avgFreq = analyser.getAverageFrequency();
+				let avgFreqBlend = avgFreq%100 / 100.0;
+
+				avgFreqBlend = avgFreq % 100 / 100.0;
+
+				if (avgFreq < effectController.avgFreqThreshold/2.0) {
+					avgFreqBlend /= 3.0;
+				} else if (avgFreq < effectController.avgFreqThreshold/1.5) {
+					avgFreqBlend /= 2.0;
+				} else if (avgFreq < effectController.avgFreqThreshold) {
+					avgFreqBlend /= 1.5;
+				} else if (avgFreq < effectController.avgFreqThreshold*2.0) {
+					avgFreqBlend /= 1.2;
+				}
+
+				for ( var i = 0; i < particleCount; i ++ )
+					particlesData[ i ].numConnections = 0;
+
+				for ( var i = 0; i < particleCount; i ++ ) {
+
+					// get the particle
+					var particleData = particlesData[ i ];
+
+					// move with velocity
+					particlePositions[ i * 3 ] += particleData.velocity.x * avgFreqBlend * effectController.particleAccelator * effectController.particleAccelator * effectController.particleAccelator;
+					particlePositions[ i * 3 + 1 ] += particleData.velocity.y * avgFreqBlend * effectController.particleAccelator * effectController.particleAccelator * effectController.particleAccelator;
+					particlePositions[ i * 3 + 2 ] += particleData.velocity.z * avgFreqBlend * effectController.particleAccelator * effectController.particleAccelator * effectController.particleAccelator;
+
+					// reverse the direction
+					if ( particlePositions[ i * 3 + 1 ] < - rHalf || particlePositions[ i * 3 + 1 ] > rHalf )
+						particleData.velocity.y = - particleData.velocity.y;
+
+					if ( particlePositions[ i * 3 ] < - rHalf || particlePositions[ i * 3 ] > rHalf )
+						particleData.velocity.x = - particleData.velocity.x;
+
+					if ( particlePositions[ i * 3 + 2 ] < - rHalf || particlePositions[ i * 3 + 2 ] > rHalf )
+						particleData.velocity.z = - particleData.velocity.z;
+
+					if ( effectController.limitConnections && particleData.numConnections >= effectController.maxConnections )
+						continue;
+
+					if (!((i+1) % particleSegmentsThreshold)) {
+						iParticleSegment++;
+					}
+
+					// This is more like scale data not rgb data
+					let ffDataI = 0.0;
+					let iR, iG , iB;
+					iR = iG = iB = 1.0;
+
+					let blender = 1.0;
+					let modifier = 2.0;
+
+					let leftData = analyser.data[(i+0)*2];
+					let rightData = analyser.data[(i+1)*2];
+
+					let rModifier, gModifier, bModifier;
+
+					rModifier = gModifier = bModifier = 1.0;
+
+					
+					ffDataI += leftData + rightData;
+					ffDataI = ffDataI / 2.0;
+					ffDataI = ffDataI / 255.0;
+
+					let dif = leftData - rightData;
+					
+					if (dif > effectController.RGBModifierThreshold) {
+						rModifier = 2.0;
+					} else if (dif < -effectController.RGBModifierThreshold) {
+						gModifier = 2.0;
+					} else {
+						bModifier = 2.0;
+					}
+
+					if (iParticleSegment == 0) {
+						iR *= ffDataI*rModifier;
+						iG *= ffDataI*gModifier/modifier;
+						iB *= ffDataI*bModifier/modifier;
+					} else if (iParticleSegment == 1) {
+						iR *= ffDataI*rModifier/modifier;
+						iG *= ffDataI*gModifier;
+						iB *= ffDataI*bModifier/modifier;
+					} else if (iParticleSegment == 2) {
+						iR *= ffDataI*rModifier/modifier;
+						iG *= ffDataI*gModifier/modifier;
+						iB *= ffDataI*bModifier;
+					} else {
+						iR *= -ffDataI*rModifier;
+						iG *= -ffDataI*gModifier;
+						iB *= -ffDataI*bModifier;
+					}
+
+					iR *= avgFreqBlend * effectController.lineAlphaRatio;
+					iG *= avgFreqBlend * effectController.lineAlphaRatio;
+					iB *= avgFreqBlend * effectController.lineAlphaRatio;
+
+					// Check collision (1 : all)
+					for ( var j = i + 1; j < maxParticleCount; j ++ ) {
+
+						var particleDataB = particlesData[ j ];
+						if ( effectController.limitConnections && particleDataB.numConnections >= effectController.maxConnections )
+							continue;
+
+						var dx = particlePositions[ i * 3 ] - particlePositions[ j * 3 ];
+						var dy = particlePositions[ i * 3 + 1 ] - particlePositions[ j * 3 + 1 ];
+						var dz = particlePositions[ i * 3 + 2 ] - particlePositions[ j * 3 + 2 ];
+						var dist = Math.sqrt( dx * dx + dy * dy + dz * dz );
+
+						if ( dist < effectController.minDistance ) {
+							let jParticleSegment = 0;
+
+							if (!((i+1) % particleSegmentsThreshold)) {
+								jParticleSegment++;
+							}
+
+							let ffDataJ = 0.0;
+							let jR, jG, jB;
+							let leftData, rightData;
+
+							jR = jG = jB = 1.0;
+
+							leftData = analyser.data[j*2];
+							rightData = analyser.data[(j+1)*2];
+
+							ffDataJ = leftData + rightData;
+
+							let dif = leftData - rightData;
+
+							if (dif > effectController.RGBModifierThreshold) {
+								rModifier = 2.0;
+							} else if (dif < -effectController.RGBModifierThreshold) {
+								gModifier = 2.0;
+							} else {
+								bModifier = 2.0;
+							}
+
+							ffDataJ = ffDataJ / 2.0
+							ffDataJ = ffDataJ / 255.0;
+
+							if (iParticleSegment == 0) {
+								jR *= ffDataJ*rModifier;
+								jG *= ffDataJ*gModifier/modifier;
+								jB *= ffDataJ*bModifier/modifier;
+							} else if (iParticleSegment == 1) {
+								jR *= ffDataJ*rModifier/modifier;
+								jG *= ffDataJ*gModifier;
+								jB *= ffDataJ*bModifier/modifier;
+							} else if (iParticleSegment == 2) {
+								jR *= ffDataJ*rModifier/modifier;
+								jG *= ffDataJ*gModifier/modifier;
+								jB *= ffDataJ*bModifier;
+							} else {
+								jR *= -ffDataJ*rModifier;
+								jG *= -ffDataJ*gModifier;
+								jB *= -ffDataJ*bModifier;
+							}
+
+							var alpha = 1.0 - dist / effectController.minDistance;
+
+							jR *= avgFreqBlend * effectController.lineAlphaRatio * alpha;
+							jG *= avgFreqBlend * effectController.lineAlphaRatio * alpha;
+							jB *= avgFreqBlend * effectController.lineAlphaRatio * alpha;
+
+							particleData.numConnections++;
+							particleDataB.numConnections++;
+
+							// var alpha = 1.0 - (255 - analyser.data[numConnected%(fftSize/2)])/255 * effectController.lineAlphaRatio;
+
+							// select segments in the group of segments of maxParticles * maxParticles
+							// and give them positions of the particles(A and B)
+							// so that they can be connected(visible)
+							positions[ vertexpos ++ ] = particlePositions[ i * 3 ];
+							positions[ vertexpos ++ ] = particlePositions[ i * 3 + 1 ];
+							positions[ vertexpos ++ ] = particlePositions[ i * 3 + 2 ];
+
+							positions[ vertexpos ++ ] = particlePositions[ j * 3 ];
+							positions[ vertexpos ++ ] = particlePositions[ j * 3 + 1 ];
+							positions[ vertexpos ++ ] = particlePositions[ j * 3 + 2 ];
+
+							// 어느 한쪽 점을 -값으로 주면 연결된 점에서 이 점으로 올 떄 color blending 효과가 생긴다.
+							colors[ colorpos ++ ] = iR;
+							colors[ colorpos ++ ] = iG;
+							colors[ colorpos ++ ] = iB;
+
+							// colors[ colorpos ++ ] = cg;
+							// colors[ colorpos ++ ] = cb;
+							// colors[ colorpos ++ ] = cr;
+
+							colors[ colorpos ++ ] = jR;
+							colors[ colorpos ++ ] = jG;
+							colors[ colorpos ++ ] = jB;
+
+							numConnected ++;
+
+						}
+
+					}
+				}
+
+				// = all connectted(visible) lines in this frame 
+				linesMesh.geometry.setDrawRange( 0, numConnected * 2 * (avgFreq/60));
+				linesMesh.geometry.attributes.position.needsUpdate = true;
+				linesMesh.geometry.attributes.color.needsUpdate = true;
+
+				pointCloud.geometry.attributes.position.needsUpdate = true;
+
+				requestAnimationFrame( animate );
+
+				// matLine.resolution.set(window.innerWidth, window.innerHeight);
+
+				stats.update();
+				render();
+			}
+
+			function render() {
+				theta += 0.1;
+
+				var time = Date.now() * 0.001;
+
+				camera.position.x = r * Math.sin( theta * PI / 180 );
+				camera.position.y = r * Math.sin( theta * PI / 180 );
+				camera.position.z = r * Math.cos( theta * PI / 180 );
+				camera.lookAt( scene.position );
+
+				camera.updateMatrixWorld();
+
+				group.rotation.y = time * 0.1;
+				renderer.render( scene, camera );
+
+				analyser.getFrequencyData();
+				//uniforms.tAudioData.value.needsUpdate = true;
+			}
+
+		</script>
+	</body>
+</html>
