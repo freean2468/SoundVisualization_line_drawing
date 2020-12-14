@@ -1,4 +1,5 @@
 # SoundVisualization_line_drawing
+Javascript의 Third party 중 3D를 구현하는 threeJS 라이브러리를 이용 sound를 분석해 그 데이터를 3D로 시각화하는 프로젝트.
 
 ![SoundVisualization_line_drawing_preview](https://i.imgur.com/qpmiQS6.jpg)
 
@@ -14,5 +15,5 @@
  * 로컬 서버 실행 후 sound_visualization_with_line_drawing.html 실행
  * 로컬 서버 구동 법은 링크 참조 : https://threejs.org/docs/index.html#manual/en/introduction/How-to-run-things-locally
 
-### 플레이 영상
+### 실행 영상
 https://youtu.be/W6Nxgye5nfk
