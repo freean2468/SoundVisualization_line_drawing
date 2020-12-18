@@ -1,7 +1,7 @@
 # Sound_Visualization
 Javascript와 WebGL 3D를 구현하는 threeJS 라이브러리를 이용 sound를 분석해 그 데이터를 3D로 시각화하는 프로젝트.
 
-![SoundVisualization_line_drawing_preview](https://i.imgur.com/qpmiQS6.jpg)
+![Sound_Visualization_preview](https://i.imgur.com/qpmiQS6.jpg)
 
 ### 개발 환경
 * Visual Studio Code on Mac OS
