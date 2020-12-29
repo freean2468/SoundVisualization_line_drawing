@@ -3,6 +3,7 @@ import { GUI } from 'https://threejsfundamentals.org/threejs/../3rdparty/dat.gui
 import * as THREE from './node_modules/three/build/three.module.js';
 import AxisGridHelper from './AxisGridHelper.js';
 import CustomSinCurve from './CustomSinCurve.js';
+import ColorGUIHelper from './ColorGUIHelper.js';
 
 let spread = 15;
 let scene;
@@ -12,6 +13,11 @@ const gui = new GUI();
 export function setScene(val) { scene = val; }
 export function setSpread(val) { spread = val; }
 export function getObjects() { return objects; }
+export function getCanvas(id) { return document.querySelector(id); }
+
+export function makeCamera(fov = 40, aspect = 2, zNear = 0.1, zFar = 100) {
+    return new THREE.PerspectiveCamera(fov, aspect, zNear, zFar);
+}
 
 export function addObject(x, y, obj) {
     const copy = obj;

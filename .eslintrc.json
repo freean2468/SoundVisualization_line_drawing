@@ -25,6 +25,7 @@
         "max-len":"off",
         "import/extensions": [ "off" ],
         "no-param-reassign":"off",
-        "no-underscore-dangle":"off"
+        "no-underscore-dangle":"off",
+        "no-plusplus":"off"
     }
 }
